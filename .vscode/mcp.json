@@ -1,0 +1,28 @@
+{
+  "servers": {
+    "azure-devops-mcp": {
+      "type": "stdio",
+      "command": "npx.cmd",
+      "args": [
+        "-y",
+        "@azure-devops/mcp",
+        "${input:ado_org}",
+        "--authentication",
+        "azcli",
+        "-d",
+        "core",
+        "work",
+        "work-items",
+        "search"
+      ]
+    }
+  },
+  "inputs": [
+    {
+      "id": "ado_org",
+      "type": "promptString",
+      "description": "Azure DevOps Organization Name",
+      "default": "AmericanAirlines"
+    }
+  ]
+}

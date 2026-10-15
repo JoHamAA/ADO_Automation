@@ -1,0 +1,192 @@
+version: 1
+
+activeBacklog: pax
+activeTeam: dfw
+# Default iteration: unscheduled project backlog. Only resolve to a team's
+# "@CurrentIteration" sprint when the user explicitly requests a sprint/iteration.
+activeIteration: "PassengerDataHub"
+
+backlogs:
+
+  pax:
+    project: PassengerDataHub
+    areaPath: PassengerDataHub
+    activeTeam: dfw
+    # Shared backlog for both dfw and hyd teams since either can pick up a story.
+    activeIteration: "PassengerDataHub"
+
+    teams:
+      dfw:
+        name: PaxHub_DFW
+        gdc: S-DFW
+        areaPath: PassengerDataHub
+        iterationPath: PassengerDataHub\PaxHub_DFW
+        activeIteration: "@CurrentIteration"
+
+      hyd:
+        name: PaxHub_HYD
+        gdc: S-HYD
+        areaPath: PassengerDataHub
+        iterationPath: PassengerDataHub\PaxHub_HYD
+        activeIteration: "@CurrentIteration"
+
+    roster:
+
+      "Zhu, Hongtao":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Vardhan, Harsha":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+
+      "Suresh, Anveetha":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+      "Saxena, Shailender":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Saha, Jayanta":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Rivera, Jasmine":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Ramos, Kevin":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Praneetha, Chodey":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+      "Periyasamy, Sridharan":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Nomula, Deepthi":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+      "Nguyen, Andy":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Menon, Prashant":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Kulkarni, Sneha":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Kamath, Sihi":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Hoang, Cassidy":
+        gdc: S-DFW
+        team: dfw
+        role:
+
+      "Harshitha, Kadam":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+      "Ghosh, Deepayan":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+      "Bulusu, Karthik":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+      "Bedi, Ayushman":
+        gdc: S-HYD
+        team: hyd
+        role:
+
+      "Hamandi, Joseph":
+        gdc: S-DFW
+        team: dfw
+        role: PO
+
+      "Kumar, Vinod":
+        gdc: S-HYD
+        team: hyd
+        role: PO
+
+  deaa:
+    project: DataEngineering
+    areaPath: DataEngineering\Comm Data Eng Bus Analytics 1
+    activeTeam: team1
+    activeIteration: "@CurrentIteration"
+
+    teams:
+      team1:
+        name: DEAA_Team1
+        areaPath: DataEngineering\Comm Data Eng Bus Analytics 1
+        iterationPath: DataEngineering
+        activeIteration: "@CurrentIteration"
+
+      team2:
+        name: DEAA_Team2
+        areaPath: DataEngineering\Comm Data Eng Bus Analytics 1
+        iterationPath: DataEngineering
+        activeIteration: "@CurrentIteration"
+
+defaults:
+  workItemType: User Story
+  storyPoints: 0
+  priority: 2
+  ready: Yes
+  workType: "4. Software / UX"
+  placeNewStoriesAtTopOfBacklog: true
+
+notifications:
+  teams:
+    enabled: true
+    # Created via Teams channel > ... > Workflows > "Send webhook alerts to a channel".
+    # The URL is a secret (its `sig` query param is the only auth) - store it in this
+    # env var, never in this file or any committed artifact.
+    webhookUrlEnvVar: TEAMS_WEBHOOK_URL
+    payloadFormat: adaptiveCard
+    adaptiveCardVersion: "1.4"
+    # Envelope the Workflows trigger expects:
+    #   { "type": "message",
+    #     "attachments": [ { "contentType": "application/vnd.microsoft.card.adaptive",
+    #                        "content": { <AdaptiveCard> } } ] }
+    # POST with Content-Type: application/json. A successful post returns HTTP 202
+    # with an empty body, so do not treat an empty response as a failure.
+    setupNotes: >-
+      Legacy Office 365 "Incoming Webhook" connectors are retired; use the Workflows
+      template above. Requires a Standard (not private/shared) channel. To rotate the
+      secret, delete and recreate the flow, then update the TEAMS_WEBHOOK_URL env var.
+
+commands:
+  createStory: true
+  moveStory: true
+  updateStory: true
+  postToTeams: true

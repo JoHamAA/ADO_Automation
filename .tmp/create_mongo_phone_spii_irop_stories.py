@@ -1,0 +1,120 @@
+import json
+import urllib.request
+
+
+def ac(title, given, when, then, and_):
+    return {"title": title, "given": given, "when": when, "then": then, "and": and_}
+
+
+stories = [
+    {
+        "backlog": "pax",
+        "parent_id": 3107210,
+        "title": "PaxHub - Migration to MongoDB - Customer Reservation - Phone Collection - Define Schema",
+        "description": {
+            "given": "the SQLMI API Customer Reservation is being brought to MongoDB and no Phone collection exists",
+            "when": "the Phone collection is defined and created in NONPROD",
+            "then": "the collection exists with a chosen name, required validation elements, and initial indexes",
+            "and": "the collection supports the Customer Reservation query use case",
+            "context": "In order to bring SQLMI API Customer Reservation to Mongo, a new collection must be defined and created so that can query the collection for the use case. The end goal of this story is to create the collection in nonprod, which includes choosing the name of the collection, defining the required validation elements, and creating initial indexes.",
+        },
+        "acceptance_criteria": [
+            ac("Create the Phone collection in NONPROD with an agreed name",
+               "the Phone collection naming has been reviewed against existing collection conventions",
+               "the collection is created in the NONPROD MongoDB environment",
+               "the collection exists under the agreed name",
+               "the name and purpose are documented"),
+            ac("Enforce validation for required Phone elements",
+               "the required Phone elements and data types are defined from the SQLMI source",
+               "a document is inserted that is missing a required element or has an invalid type",
+               "the validation rules reject the document with a clear error",
+               "valid documents are accepted without errors"),
+            ac("Create initial indexes for the Customer Reservation query use case",
+               "the Customer Reservation query patterns are identified",
+               "the initial indexes are created on the collection",
+               "representative queries use the indexes",
+               "the index definitions are documented in the schema artifacts"),
+            ac("Document schema and assess consumer impact",
+               "the collection, validation, and indexes are in place in NONPROD",
+               "the schema definition is reviewed with the API and data owners",
+               "the schema, assumptions, and open items for PROD readiness are documented",
+               "no existing collection or consumer is affected by the change"),
+        ],
+    },
+    {
+        "backlog": "pax",
+        "parent_id": 3107210,
+        "title": "PaxHub - Migration to MongoDB - PNR PROCESSOR - Send SPII messages via batching to Service Bus",
+        "description": {
+            "given": "the PNR Processor sends SPII messages to a separate downstream queue one message at a time",
+            "when": "SPII messages are sent to the Service Bus queue in batches",
+            "then": "multiple messages are sent per call using a configurable batch size",
+            "and": "before and after metrics of the change are captured and documented",
+            "context": "Follow up story to story 3222924 (https://dev.azure.com/AmericanAirlines/PassengerDataHub/_workitems/edit/3222924). Currently, PNR Processor is sending SPII messages to a separate downstream queue one message at a time. This affects the performance of the processor as it slows down the processing due to the single stream. We want to be able to send multiple messages to the SPII queue. This batch size should be configurable. Before and after metrics of the change should be captured and documented.",
+        },
+        "acceptance_criteria": [
+            ac("Send SPII messages to the queue in configurable batches",
+               "the PNR Processor has multiple SPII messages to send",
+               "the processor sends them to the SPII Service Bus queue",
+               "messages are sent in batches up to the configured batch size",
+               "every message is delivered to the queue exactly as before"),
+            ac("Handle batch send failures without losing messages",
+               "a batch send fails or a message exceeds the allowed batch size",
+               "the processor handles the failure",
+               "the failure is logged and the affected messages are retried or reported without losing data",
+               "the processor remains stable and continues processing other messages"),
+            ac("Make batch size configurable and documented",
+               "the batch size is defined as a configuration setting",
+               "the setting is changed between deployments",
+               "the processor uses the configured value with a safe default",
+               "the setting and its behavior are documented"),
+            ac("Capture and document before and after performance metrics",
+               "baseline processor throughput with single-message sends is recorded",
+               "the same workload is run with batching enabled",
+               "before and after metrics are compared",
+               "the results are documented and downstream consumers of the SPII queue are confirmed unaffected"),
+        ],
+    },
+    {
+        "backlog": "pax",
+        "parent_id": 3107427,
+        "title": "PaxHub - Migration to MongoDB - PNR GRAPH API - Add isIropPnr Response Element (NONPROD)",
+        "description": {
+            "given": "a PNR may be affected by IROPs",
+            "when": "the openReservationElements on bkg and bkg_cust contain a spl_svc_cd equal to 'IRSS'",
+            "then": "the boolean response element isIropPnr is true",
+            "and": "the element is available in all scopes (nonpii, pii, spii, hist)",
+            "context": "We want to add boolean response element isIropPnr, which determines if a PNR is affected by IROPs. This can be evaluated by looking at the element spl_svc_cd is equal to 'IRSS'. We must scan openreservation elements for this code on both bkg and bkg_cust. If it exists, the boolean will be true. Once implemented, need to perform load test and compare with stats prior to implementation. Schema must be updated and deployed to Apollo to include this new response element. Related paths: bkg collection: reservation.openReservationElements.openReservationElement[].serviceRequest.spl_svc_cd; bkg_cust collection: openReservationElements.openReservationElement[].serviceRequest.spl_svc_cd.",
+        },
+        "acceptance_criteria": [
+            ac("Return isIropPnr true when an IRSS service code exists",
+               "a PNR has an openReservationElement with spl_svc_cd equal to 'IRSS' in bkg or bkg_cust",
+               "the PNR is requested through the Graph API",
+               "isIropPnr is true",
+               "the element is available in the nonpii, pii, spii, and hist scopes"),
+            ac("Return isIropPnr false and handle missing data gracefully",
+               "a PNR has no IRSS code or has missing or malformed openReservationElements",
+               "the PNR is requested through the Graph API",
+               "isIropPnr is false without errors",
+               "the API remains stable for every scope"),
+            ac("Update and deploy the schema to Apollo",
+               "the isIropPnr response element is implemented",
+               "the GraphQL schema is updated and deployed to Apollo in NONPROD",
+               "the element appears in the Apollo schema for all scopes",
+               "schema documentation is updated"),
+            ac("Validate performance with a before and after load test",
+               "baseline load test statistics exist from before the change",
+               "the load test is repeated after implementation",
+               "results are compared with the baseline",
+               "any regression is documented and existing consumers are confirmed unaffected"),
+        ],
+    },
+]
+
+req = urllib.request.Request(
+    "http://127.0.0.1:8765/stories/batch",
+    data=json.dumps({"stories": stories}).encode(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+print(urllib.request.urlopen(req).read().decode())
