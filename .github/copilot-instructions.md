@@ -49,11 +49,18 @@ Refer to these local backlog files for domain context, project direction, and ex
 - Preserve a user-provided title when they identify it as the requested story title; otherwise normalize it to the relevant backlog convention.
 - Before creating, include the normalized final title in the preflight summary.
 
-### 2. Description Section (Gherkin Format)
-Format `System.Description` in HTML with bold Gherkin keywords and a clear `Context:` block:
+### 2. Description Section (Business Value + Gherkin Format)
+Format `System.Description` in HTML in this order:
+1. **Business Value:** Begin the first line with `<b>Business Value:</b>` followed by one concise statement explaining the business, customer, or operational benefit, not just the implementation task. Do not invent metrics or benefits unsupported by the request.
+2. **Blank line:** Put the Business Value statement in its own `<div>` and insert `<br>` before the separate Gherkin `<div>` so the statement is visibly separated from the story by a blank line.
+3. **Existing Gherkin format:** Preserve the existing Given / When / Then / And structure and bold keywords unchanged.
+4. **Context (optional):** Include only essential technical references not already covered, such as an exact dataset, column, field path, or link. Keep it minimal and omit the entire section when it adds nothing unique. Do not put tasks, handoffs, planning notes, or repeated requirements here. Put the benefit in Business Value, expected behavior in Given / When / Then / And, and testable requirements in acceptance criteria. Do not invent details to fill the section.
+
 ```html
-<div><b>Given</b> <precondition or starting system state><br><b>When</b> <action, event, or trigger occurs><br><b>Then</b> <expected capability, behavior, or result><br><b>And</b> <additional expected behavior or outcome></div><br><div><b>Context:</b> <detailed business background, problem statement, technical notes, and sample data payload formats></div>
+<div><b>Business Value:</b> [Concise business, customer, or operational benefit]</div><br><div><b>Given</b> [Precondition or starting system state]<br><b>When</b> [Action, event, or trigger occurs]<br><b>Then</b> [Expected capability, behavior, or result]<br><b>And</b> [Additional expected behavior or outcome]</div>
 ```
+
+Only when an essential technical reference is needed, append `<br><div><b>Context:</b> [Minimal technical reference]</div>`.
 
 ### 3. Acceptance Criteria Section (Gherkin Format)
 Format `Microsoft.VSTS.Common.AcceptanceCriteria` in HTML using bold titles and Gherkin keywords:
@@ -119,6 +126,7 @@ If verification cannot be completed, report that item as unverified. The normal 
 - Use `python -m story_creation` to run the loopback-only REST service. The service exposes `POST /stories`, `POST /stories/batch`, `PATCH /stories/{id}`, and `PATCH /stories/batch`.
 - Omitted and `null` fields are ignored. Use the `fields` object for any ADO field reference; common aliases include `title`, `state`, `description`, `acceptance_criteria`, `notes`, `rank`, `stack_rank`, `points`, `story_points`, `priority`, `ready`, `work_type`, `tags`, `area_path`, and `iteration_path`.
 - Description and acceptance criteria may be supplied as structured Gherkin or existing HTML. Structured content is serialized with bold Gherkin keywords, `<br>` line breaks, a `Context:` block, and descriptive acceptance-criteria titles. Do not use `Scenario:` labels or literal newline formatting in stored HTML.
+- Ensure the stored story description includes the Business Value first line and a blank line before the Gherkin block. Context is optional and must not be added merely to satisfy serialization. If structured-description serialization cannot preserve Business Value or omit unnecessary Context, supply the complete description as HTML using the template in the Description Section above.
 - Updates patch only supplied fields. `PATCH /stories/batch` accepts multiple `{id, ...fields}` updates and continues after individual failures. An update with no usable fields is a no-op, not an error. Notes map to `System.History` and are append-only.
 - A successful write with failed read-back returns `created_unverified` or `updated_unverified` with the known ID; an ambiguous transport failure returns an `*_outcome_unknown` status. Never retry either automatically. A definite ADO 4xx rejection returns `*_failed`.
 - Duplicate titles are allowed. Do not add a duplicate check or block a create based on an existing title.

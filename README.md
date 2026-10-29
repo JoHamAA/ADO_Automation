@@ -123,6 +123,28 @@ via Task Scheduler, an Azure DevOps pipeline, or a GitHub Action, with `ADO_PAT`
 and `TEAMS_WEBHOOK_URL` supplied as secrets. Run without `--post` first if you
 want to review the output before it is broadcast.
 
+## Defect Creation via the Local REST Service
+
+`POST /stories` also accepts `"work_item_type": "Bug"` for PAX defects.
+Bug creation omits the unsupported `AAIT.WorkType` default; explicit field
+overrides remain available. Supply defect reproduction details and Gherkin
+acceptance criteria as HTML in `fields["Microsoft.VSTS.TCM.ReproSteps"]`,
+not the User Story `acceptance_criteria` field.
+Use `story_points` for the estimate and omit `parent_id` when a parent is deferred.
+Other configured defaults still apply. Automatic ranking currently uses User
+Stories; supply `stack_rank` explicitly when positioning a Bug against the
+combined Bug and User Story backlog.
+
+## Epic Creation via the Local REST Service
+
+`POST /stories` accepts `"work_item_type": "Epic"`. Epic creation defaults to
+`New` and omits Story Points and Work Type defaults, which PAX Epics do not
+support. Explicit field overrides remain available. Include Gherkin acceptance
+criteria in the HTML `description`, since the User Story acceptance-criteria
+field is unavailable. Omit `parent_id` for an unparented Epic and supply an
+explicit `stack_rank` based on the Epic backlog; automatic ranking still queries
+User Stories.
+
 ## Parent Tag Inheritance
 
 The `tag_inheritance` command audits User Stories in the current DFW, HYD, or

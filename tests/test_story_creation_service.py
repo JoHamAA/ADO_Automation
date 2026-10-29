@@ -118,11 +118,84 @@ def test_create_omits_unused_content_fields_and_applies_configured_defaults(tmp_
     assert fields["Microsoft.VSTS.Scheduling.StoryPoints"] == 0
     assert fields["Microsoft.VSTS.Common.Priority"] == 2
     assert fields["AAIT.Ready"] == "Yes"
+    assert fields["AAIT.WorkType"] == "4. Software / UX"
     assert fields["System.Tags"] == "AI-StoryWriting"
     assert fields["Microsoft.VSTS.Common.StackRank"] == 1000
     assert "System.Description" not in fields
     assert "Microsoft.VSTS.Common.AcceptanceCriteria" not in fields
     assert "System.History" not in fields
+
+
+def test_create_bug_omits_story_work_type_and_preserves_explicit_fields(tmp_path):
+    service, client = make_service(tmp_path)
+    result = service.create_story(
+        {
+            "backlog": "deaa",
+            "title": "Fix EMD transformation",
+            "work_item_type": "Bug",
+            "story_points": 2,
+            "stack_rank": -10,
+            "fields": {
+                "Microsoft.VSTS.TCM.ReproSteps": "<div>Reported regression and criteria</div>"
+            },
+        }
+    )
+
+    _, item_type, fields, parent_id = client.created[0]
+    assert result["status"] == "created_verified"
+    assert item_type == "Bug"
+    assert parent_id is None
+    assert "AAIT.WorkType" not in fields
+    assert fields["Microsoft.VSTS.Scheduling.StoryPoints"] == 2
+    assert fields["Microsoft.VSTS.Common.StackRank"] == -10
+    assert fields["Microsoft.VSTS.TCM.ReproSteps"] == (
+        "<div>Reported regression and criteria</div>"
+    )
+    assert "Microsoft.VSTS.Common.AcceptanceCriteria" not in fields
+    assert client.queries == []
+
+
+def test_create_epic_uses_new_state_and_omits_unsupported_defaults(tmp_path):
+    service, client = make_service(tmp_path)
+
+    result = service.create_story(
+        {
+            "backlog": "deaa",
+            "title": "LTS data delivery to NPOX",
+            "work_item_type": "Epic",
+            "stack_rank": -1000000,
+            "description": "<div>Scope and Gherkin acceptance criteria</div>",
+        }
+    )
+
+    _, item_type, fields, parent_id = client.created[0]
+    assert result["status"] == "created_verified"
+    assert item_type == "Epic"
+    assert parent_id is None
+    assert fields["System.State"] == "New"
+    assert fields["Microsoft.VSTS.Common.Priority"] == 2
+    assert fields["AAIT.Ready"] == "Yes"
+    assert fields["System.Description"] == "<div>Scope and Gherkin acceptance criteria</div>"
+    assert "Microsoft.VSTS.Scheduling.StoryPoints" not in fields
+    assert "AAIT.WorkType" not in fields
+    assert "Microsoft.VSTS.Common.AcceptanceCriteria" not in fields
+    assert client.queries == []
+
+
+def test_create_epic_preserves_explicit_state_override(tmp_path):
+    service, client = make_service(tmp_path)
+
+    service.create_story(
+        {
+            "backlog": "deaa",
+            "title": "LTS discovery",
+            "work_item_type": "Epic",
+            "state": "Discovering",
+            "stack_rank": -1000000,
+        }
+    )
+
+    assert client.created[0][2]["System.State"] == "Discovering"
 
 
 def test_create_maps_custom_fields_and_formats_structured_gherkin(tmp_path):

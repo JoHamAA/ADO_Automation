@@ -223,14 +223,16 @@ class StoryService:
             ready_value = "Yes" if ready_value else "No"
         fields: Dict[str, Any] = {
             "System.Title": title,
-            "System.State": "Backlog",
+            "System.State": "New" if work_item_type.casefold() == "epic" else "Backlog",
             "System.AreaPath": area,
             "System.IterationPath": iteration,
-            "Microsoft.VSTS.Scheduling.StoryPoints": defaults.get("storyPoints", 0),
             "Microsoft.VSTS.Common.Priority": defaults.get("priority", 2),
             "AAIT.Ready": ready_value,
-            "AAIT.WorkType": defaults.get("workType", "4. Software / UX"),
         }
+        if work_item_type.casefold() != "epic":
+            fields["Microsoft.VSTS.Scheduling.StoryPoints"] = defaults.get("storyPoints", 0)
+        if work_item_type.casefold() not in ("bug", "epic"):
+            fields["AAIT.WorkType"] = defaults.get("workType", "4. Software / UX")
         explicit_fields = self._prepare_fields(request, create=True, title=title)
         fields.update(explicit_fields)
 
