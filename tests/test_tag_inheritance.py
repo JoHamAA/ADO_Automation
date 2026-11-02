@@ -249,7 +249,7 @@ def test_client_patch_is_revision_guarded(monkeypatch):
     assert captured["json"] == [
         {"op": "test", "path": "/rev", "value": 7},
         {
-            "op": "add",
+            "op": "replace",
             "path": "/fields/System.Tags",
             "value": "Story Only; Parent Tag",
         },

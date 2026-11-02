@@ -219,9 +219,10 @@ class TagInheritanceClient(AdoClient):
     ) -> None:
         """Replace the tag field once, guarded by the revision shown for approval."""
         url = f"{self.org_url}/_apis/wit/workitems/{story_id}?api-version={API_VERSION}"
+        # ADO merges System.Tags on "add", so removed tags would persist.
         patch = [
             {"op": "test", "path": "/rev", "value": revision},
-            {"op": "add", "path": "/fields/System.Tags", "value": "; ".join(tags)},
+            {"op": "replace", "path": "/fields/System.Tags", "value": "; ".join(tags)},
         ]
         self._request(
             "PATCH",
