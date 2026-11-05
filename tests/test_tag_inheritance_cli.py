@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from tag_inheritance.cli import _parse_exclusions, build_parser
-from tag_inheritance.console import render_audit, render_plan
+from tag_inheritance.console import (
+    render_audit,
+    render_plan,
+    render_tag_removal_plan,
+)
 from tag_inheritance.models import TeamTagAudit, TagWorkItem, compare_tags
 
 
@@ -34,6 +38,24 @@ def test_optional_sprint_number_parses(argv, expected_sprint):
 def test_optional_sprint_number_must_be_positive_integer(value):
     with pytest.raises(SystemExit):
         build_parser().parse_args(["sync", "BOTH", value])
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["remove-tag", "BOTH", "Quarter Tag"], ("both", "Quarter Tag", None)),
+        (["remove-tag", "DFW", "Quarter Tag", "39"], ("dfw", "Quarter Tag", 39)),
+    ],
+)
+def test_remove_tag_command_parses_single_tag_iteration(argv, expected):
+    args = build_parser().parse_args(argv)
+    assert (args.team, args.tag, args.sprint_number) == expected
+
+
+@pytest.mark.parametrize("tag", ["", "  ", "one;two", ";"])
+def test_remove_tag_command_rejects_empty_or_multiple_tags(tag):
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["remove-tag", "DFW", tag])
 
 
 @pytest.mark.parametrize("value", ["abc", "0", "-2", "1,,2"])
@@ -77,3 +99,10 @@ def test_sync_preview_shows_additions_removals_and_final_tags():
     assert "add: Initiative; S-DFW" in output
     assert "remove: S-HYD; Run" in output
     assert "final: Story Only; Initiative; S-DFW" in output
+
+
+def test_remove_tag_preview_lists_only_affected_stories():
+    matching = TagWorkItem(20, "Has obsolete tag", "User Story", ("Obsolete",), 1)
+    output = render_tag_removal_plan("Obsolete", [matching])
+    assert "remove Obsolete from 20 | Has obsolete tag" in output
+    assert "Stories to update: 1" in output

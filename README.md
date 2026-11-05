@@ -151,16 +151,39 @@ The `tag_inheritance` command audits User Stories in the current DFW, HYD, or
 both team iterations. It compares each story's tags with its parent Feature's
 tags and prints every story plus a summary.
 
+Quarter/year tags are not inherited from Features. Each story instead receives
+one canonical tag (`1Q26`, `2Q26`, `3Q26`, or `4Q26`) calculated from the start
+date of its **currently assigned iteration**, regardless of story state. A sprint
+starting in Q3 and ending in Q4 produces `3Q26`. Calendar quarters are used, and
+ADO's date-only start date is not shifted into a local timezone.
+
+The audit previews removal of incorrect or alternate-format quarter tags
+(for example `3Q26`, `26Q4`, or `Q4 2026`) and addition of the correct canonical
+tag. Other tags and Feature work items are preserved. Dates are resolved per
+exact story iteration path, including descendant iterations, and cached during
+the audit. Missing, invalid, or unreadable start dates make a story unresolved
+and prevent all tag writes for that story; no replacement date is guessed.
+`sync` still requires `YES` and verifies the entire persisted tag set after each
+revision-guarded update. The current-iteration rule does not reconstruct historical
+completion iterations.
+
+New User Stories created through the story REST service also exclude Feature
+quarter tags. Unscheduled stories receive no automatic quarter tag; run the tag
+audit/sync after assigning a dated team iteration.
+
 ### CLI syntax
 
 ```text
 python -m tag_inheritance {scan|sync} {DFW|HYD|BOTH} [SPRINT_NUMBER] [--exclude ID[,ID...]] [--config PATH]
+python -m tag_inheritance remove-tag {DFW|HYD|BOTH} TAG [SPRINT_NUMBER] [--exclude ID[,ID...]] [--config PATH]
 ```
 
 | Argument or option | Purpose |
 |---|---|
 | `scan` | Read-only audit. Reports compliant, missing, conflicting, excluded, and unresolved stories. |
 | `sync` | Runs the audit, previews changes, requests approval, updates stories, and verifies the persisted tags. |
+| `remove-tag` | Finds stories in the selected iteration(s) that contain one specified tag, lists only those stories, requests exact `YES` approval, removes that tag, and verifies each update. |
+| `TAG` | Exactly one non-empty tag name; semicolon-delimited multiple tags are rejected. Tag matching is case-insensitive. |
 | `DFW` | Scans the current `PaxHub_DFW` iteration and requires `S-DFW`. |
 | `HYD` | Scans the current `PaxHub_HYD` iteration and requires `S-HYD`. |
 | `BOTH` | Scans the selected iteration for both teams and reports each team separately. |
@@ -188,6 +211,26 @@ python -m tag_inheritance scan DFW --exclude 12345 --exclude 123532
 # Use another configuration file
 python -m tag_inheritance scan BOTH --config .\config\pax.yaml
 ```
+
+### Remove one tag from an iteration
+
+```powershell
+# Preview matches in DFW's current iteration, then approve with exact YES
+python -m tag_inheritance remove-tag DFW "Obsolete Tag"
+
+# Search both teams' current iterations, excluding specific stories
+python -m tag_inheritance remove-tag BOTH "OldQuarterTag" --exclude 12345,123532
+
+# Search a numbered past/current sprint
+python -m tag_inheritance remove-tag HYD "Obsolete Tag" 39
+```
+
+The removal preview lists only affected story IDs and titles; stories without the
+requested tag are omitted. No matching stories means no prompt and no writes.
+Declining approval changes nothing. After approval, each update is revision
+guarded and read back; failures are reported per story without automatic retries.
+Use one invocation per tag. `--exclude` stories remain unchanged and are not
+included in the removal approval list.
 
 `scan` never modifies Azure DevOps. Every story is printed with one of these
 statuses:

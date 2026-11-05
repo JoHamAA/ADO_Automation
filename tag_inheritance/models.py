@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 from rapidfuzz import fuzz
+from .quarter_tags import is_quarter_tag
 
 TEAM_TAGS = ("S-DFW", "S-HYD")
 CLASSIFICATION_TAGS = ("Run", "Initiative")
@@ -56,6 +57,7 @@ class TagWorkItem:
     revision: int
     parent_ids: Tuple[int, ...] = ()
     notes: str = ""
+    iteration_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -128,12 +130,22 @@ class UpdateResult:
     detail: str
 
 
+@dataclass(frozen=True)
+class TagRemovalResult:
+    """Verified outcome of removing one tag from one story."""
+
+    story: TagWorkItem
+    succeeded: bool
+    detail: str
+
+
 def compare_tags(
     story: TagWorkItem,
     parent: TagWorkItem,
     expected_team_tag: str,
     excluded: bool = False,
     image_tag_matches: Sequence[ImageTagMatch] = (),
+    expected_quarter_tag: str | None = None,
 ) -> TagAuditResult:
     """Apply additive inheritance plus exclusive team and classification rules."""
     parent_classifications = tuple(
@@ -157,14 +169,21 @@ def compare_tags(
         for tag in story.tags
         if (tag in TEAM_TAGS and tag != expected_team_tag)
         or (tag in CLASSIFICATION_TAGS and tag != expected_classification)
+        or (
+            expected_quarter_tag is not None
+            and is_quarter_tag(tag)
+            and tag != expected_quarter_tag
+        )
     )
     retained = tuple(tag for tag in story.tags if tag not in tags_to_remove)
 
     tags_to_add = tuple(
         tag
         for tag in parent.tags
-        if tag not in TEAM_TAGS and tag not in retained
+        if tag not in TEAM_TAGS and not is_quarter_tag(tag) and tag not in retained
     )
+    if expected_quarter_tag is not None and expected_quarter_tag not in retained:
+        tags_to_add += (expected_quarter_tag,)
     if expected_team_tag not in retained and expected_team_tag not in tags_to_add:
         tags_to_add += (expected_team_tag,)
     tags_to_add += tuple(

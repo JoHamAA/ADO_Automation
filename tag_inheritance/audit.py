@@ -13,10 +13,12 @@ from eo_review.config import Config
 
 from .client import TagInheritanceClient
 from .image_tags import IMAGE_KEYWORD_TAGS, ImageTagError
+from .quarter_tags import quarter_tag
 from .models import (
     TagAuditResult,
     TagWorkItem,
     TeamTagAudit,
+    TagRemovalResult,
     UpdateResult,
     compare_tags,
 )
@@ -56,6 +58,7 @@ def audit_team(
 
     ordered = sorted(stories, key=lambda item: item.id)
     results_by_id: Dict[int, TagAuditResult] = {}
+    quarter_by_path: Dict[str, Tuple[str | None, str | None]] = {}
     to_scan: List[Tuple[TagWorkItem, TagWorkItem, TagAuditResult, bool]] = []
     for story in ordered:
         excluded = story.id in excluded_ids
@@ -79,11 +82,30 @@ def audit_team(
             )
             continue
 
+        if story.iteration_path not in quarter_by_path:
+            try:
+                expected_quarter = quarter_tag(
+                    client.iteration_start_date(story.iteration_path)
+                )
+            except (AdoError, ValueError) as exc:
+                quarter_by_path[story.iteration_path] = (
+                    None, f"iteration quarter unresolved: {exc}"
+                )
+            else:
+                quarter_by_path[story.iteration_path] = (expected_quarter, None)
+        expected_quarter, quarter_issue = quarter_by_path[story.iteration_path]
+        if quarter_issue:
+            results_by_id[story.id] = TagAuditResult(
+                story, parent, excluded=excluded, issue=quarter_issue
+            )
+            continue
+
         base_result = compare_tags(
             story,
             parent,
             expected_team_tag=team.gdc,
             excluded=excluded,
+            expected_quarter_tag=expected_quarter,
         )
         if base_result.issue or not scan_images or not _needs_image_scan(story.tags):
             results_by_id[story.id] = base_result
@@ -111,6 +133,7 @@ def audit_team(
             expected_team_tag=team.gdc,
             excluded=excluded,
             image_tag_matches=image_matches,
+            expected_quarter_tag=quarter_by_path[story.iteration_path][0],
         )
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
@@ -160,6 +183,43 @@ def synchronize(
             outcomes.append(UpdateResult(audit, False, str(exc)))
         else:
             outcomes.append(UpdateResult(audit, True, "verified"))
+    return outcomes
+
+
+def remove_tag_from_stories(
+    client: TagInheritanceClient,
+    stories: Iterable[TagWorkItem],
+    tag: str,
+) -> List[TagRemovalResult]:
+    """Remove one exact tag from each selected story and verify each update."""
+    outcomes: List[TagRemovalResult] = []
+    for story in stories:
+        proposed_tags = tuple(
+            existing for existing in story.tags
+            if existing.casefold() != tag.casefold()
+        )
+        try:
+            client.update_story_tags(story.id, story.revision, proposed_tags)
+            refreshed_items = client.fetch_tag_work_items([story.id])
+            if len(refreshed_items) != 1:
+                raise AdoError("updated story could not be read back")
+            refreshed = refreshed_items[0]
+            expected_tags = Counter(proposed_tags)
+            actual_tags = Counter(refreshed.tags)
+            if actual_tags != expected_tags:
+                missing = list((expected_tags - actual_tags).elements())
+                unexpected = list((actual_tags - expected_tags).elements())
+                raise AdoError(
+                    "verification mismatch: missing ["
+                    + "; ".join(missing)
+                    + "], unexpected ["
+                    + "; ".join(unexpected)
+                    + "]"
+                )
+        except (AdoError, OSError) as exc:
+            outcomes.append(TagRemovalResult(story, False, str(exc)))
+        else:
+            outcomes.append(TagRemovalResult(story, True, "verified"))
     return outcomes
 
 

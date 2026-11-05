@@ -3,6 +3,7 @@
 import pytest
 
 from tag_inheritance.models import ImageTagMatch, TagWorkItem, compare_tags, parse_tags
+from tag_inheritance.quarter_tags import is_quarter_tag, quarter_tag
 
 
 def make_item(
@@ -125,3 +126,44 @@ def test_invalid_parent_classification_is_unresolved(parent_tags):
 
     assert result.status == "UNRESOLVED"
     assert result.proposed_tags == ()
+
+
+@pytest.mark.parametrize("tag", [
+    "3Q26", "26Q4", "Q3 2026", "2026Q3", "4Q2026", "q4-26",
+    "2026_Q_4", "Q20264", "426Q", "26 4 Q", " 4.Q.26 ",
+])
+def test_recognizes_standalone_quarter_year_formats(tag):
+    assert is_quarter_tag(tag)
+
+
+@pytest.mark.parametrize("tag", [
+    "TECH-OBJ1-KR2", "MongoPNR", "Release 3Q26", "3Q26 readiness",
+    "5Q26", "Q0 2026", "Q4", "2026", "Security & Compliance",
+])
+def test_does_not_remove_unrelated_or_non_quarter_tags(tag):
+    assert not is_quarter_tag(tag)
+
+
+@pytest.mark.parametrize("start,expected", [
+    ("2026-03-31T00:00:00Z", "1Q26"),
+    ("2026-04-01T00:00:00Z", "2Q26"),
+    ("2026-07-01T00:00:00Z", "3Q26"),
+    ("2026-09-30T00:00:00Z", "3Q26"),
+    ("2026-10-01T00:00:00Z", "4Q26"),
+    ("2026-12-31T00:00:00Z", "4Q26"),
+    ("2027-01-01T00:00:00Z", "1Q27"),
+])
+def test_quarter_uses_iteration_calendar_start_date(start, expected):
+    assert quarter_tag(start) == expected
+
+
+def test_quarter_replacement_is_exclusive_and_idempotent():
+    story = make_item(1, ("Run", "S-DFW", "3Q26", "26Q4", "4Q26", "Other"))
+    parent = make_item(2, ("Run", "2Q26", "Shared"))
+    result = compare_tags(story, parent, "S-DFW", expected_quarter_tag="4Q26")
+    assert result.tags_to_remove == ("3Q26", "26Q4")
+    assert result.proposed_tags == ("Run", "S-DFW", "4Q26", "Other", "Shared")
+    repeated = compare_tags(
+        make_item(1, result.proposed_tags), parent, "S-DFW", expected_quarter_tag="4Q26"
+    )
+    assert repeated.status == "COMPLIANT"

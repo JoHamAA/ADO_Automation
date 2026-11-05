@@ -14,10 +14,17 @@ from eo_review.ado_client import AdoError
 from eo_review.config import ConfigError, load_config
 
 from . import image_tags
-from .audit import audit_team, selected_story_ids, synchronize
+from .audit import audit_team, remove_tag_from_stories, selected_story_ids, synchronize
 from .client import TagInheritanceClient
-from .console import render_audit, render_outcomes, render_plan
+from .console import (
+    render_audit,
+    render_outcomes,
+    render_plan,
+    render_tag_removal_outcomes,
+    render_tag_removal_plan,
+)
 from .image_tags import KeywordCache
+from .models import TagWorkItem
 
 VALID_TEAMS = ("dfw", "hyd", "both")
 
@@ -57,6 +64,15 @@ def _worker_count(value: str) -> int:
     if count <= 0:
         raise argparse.ArgumentTypeError("workers must be a positive integer")
     return count
+
+
+def _single_tag(value: str) -> str:
+    tag = value.strip()
+    if not tag or ";" in tag:
+        raise argparse.ArgumentTypeError(
+            "specify exactly one non-empty tag (do not use semicolons)"
+        )
+    return tag
 
 
 def _parse_exclusions(groups: Sequence[Sequence[str]]) -> Set[int]:
@@ -119,6 +135,32 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="Skip OCR of embedded images (fast; image-derived tags are not checked).",
         )
+    removal_parser = subparsers.add_parser(
+        "remove-tag",
+        help="Preview and remove one exact tag from stories in selected iteration(s).",
+    )
+    removal_parser.add_argument("team", type=_team, metavar="{DFW|HYD|BOTH}")
+    removal_parser.add_argument("tag", type=_single_tag, help="One tag to remove.")
+    removal_parser.add_argument(
+        "sprint_number",
+        nargs="?",
+        type=_sprint_number,
+        help="Inspect the matching past sprint number instead of the current sprint.",
+    )
+    removal_parser.add_argument(
+        "--exclude",
+        action="append",
+        nargs="+",
+        default=[],
+        metavar="ID[,ID...]",
+        help="Keep story IDs unchanged even when they have the requested tag.",
+    )
+    removal_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.yaml (defaults to .github/config.yaml).",
+    )
     return parser
 
 
@@ -155,6 +197,58 @@ def _run(argv: Sequence[str] | None = None) -> int:
     try:
         config = load_config(args.config)
         client = TagInheritanceClient(config.org_url, config.project)
+
+        if args.command == "remove-tag":
+            selected = []
+            selected_ids = set()
+            excluded_ids = _parse_exclusions(args.exclude)
+            for team_key in _teams_for(args.team):
+                team = config.team(team_key)
+                iteration = (
+                    client.iteration_by_number(
+                        team.name, team.iteration_path, args.sprint_number
+                    )
+                    if args.sprint_number is not None
+                    else client.current_iteration(team.name)
+                )
+                iteration_path = iteration["path"] or team.iteration_path
+                story_ids = client.story_ids_in_iteration(iteration_path)
+                stories = client.fetch_tag_work_items(story_ids)
+                matching = [
+                    story for story in stories
+                    if args.tag.casefold() in {tag.casefold() for tag in story.tags}
+                ]
+                selected_ids.update(story.id for story in stories)
+                selected.extend(
+                    story for story in matching if story.id not in excluded_ids
+                )
+            selected.sort(key=lambda story: story.id)
+            for item_id in sorted(excluded_ids - selected_ids):
+                print(f"UNMATCHED EXCLUSION | {item_id} | not in selected iteration(s)")
+            if not selected_ids:
+                return EXIT_NO_STORIES
+            print(render_tag_removal_plan(args.tag, selected))
+            if not selected:
+                print("No selected stories contain that tag; no changes needed.")
+                return EXIT_OK
+            _report_runtime()
+            try:
+                approval = input(
+                    f"Type YES to remove '{args.tag}' from these "
+                    f"{len(selected)} stories: "
+                )
+            except EOFError:
+                approval = ""
+            if approval != "YES":
+                print("CANCELLED: no work items were changed.")
+                return EXIT_OK
+            outcomes = remove_tag_from_stories(client, selected, args.tag)
+            print(render_tag_removal_outcomes(outcomes))
+            return (
+                EXIT_RUNTIME_ERROR
+                if any(not outcome.succeeded for outcome in outcomes)
+                else EXIT_OK
+            )
 
         def progress(message: str) -> None:
             with _print_lock:

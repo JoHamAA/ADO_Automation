@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, Sequence
 
-from .models import TagAuditResult, TeamTagAudit, UpdateResult
+from .models import TagAuditResult, TagRemovalResult, TeamTagAudit, UpdateResult
 
 RULE = "-" * 78
 
@@ -90,5 +90,32 @@ def render_outcomes(outcomes: Sequence[UpdateResult]) -> str:
             f"Updated: {succeeded} | Failed: {len(outcomes) - succeeded}",
             RULE,
         ]
+    )
+    return "\n".join(lines)
+
+
+def render_tag_removal_plan(tag: str, stories: Iterable) -> str:
+    """List only stories that will have the requested tag removed."""
+    selected = list(stories)
+    lines = [RULE, f"PROPOSED REMOVAL OF TAG: {tag}", RULE]
+    lines.extend(
+        f"remove {tag} from {story.id} | {story.title}"
+        for story in selected
+    )
+    lines.extend([RULE, f"Stories to update: {len(selected)}", RULE])
+    return "\n".join(lines)
+
+
+def render_tag_removal_outcomes(
+    outcomes: Sequence[TagRemovalResult],
+) -> str:
+    """Render tag-removal update results."""
+    lines = [RULE, "TAG REMOVAL RESULTS", RULE]
+    for outcome in outcomes:
+        status = "UPDATED" if outcome.succeeded else "FAILED"
+        lines.append(f"{status:<7} | {outcome.story.id} | {outcome.detail}")
+    succeeded = sum(outcome.succeeded for outcome in outcomes)
+    lines.extend(
+        [RULE, f"Updated: {succeeded} | Failed: {len(outcomes) - succeeded}", RULE]
     )
     return "\n".join(lines)

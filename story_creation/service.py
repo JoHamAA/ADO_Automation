@@ -12,6 +12,7 @@ from urllib.parse import quote
 import yaml
 
 from eo_review.ado_client import AdoError
+from tag_inheritance.quarter_tags import is_quarter_tag
 from .client import AdoHttpError, StoryClient
 from .formatting import format_acceptance_criteria, format_description
 
@@ -238,13 +239,19 @@ class StoryService:
 
         if parent_fields is not None:
             parent_tags = _normalize_tags(parent_fields.get("System.Tags"))
+            if work_item_type.casefold() == "user story":
+                parent_tags = [tag for tag in parent_tags if not is_quarter_tag(tag)]
             tags = _normalize_tags(fields.get("System.Tags", []))
             fields["System.Tags"] = list(
-                dict.fromkeys(["AI-StoryWriting", *parent_tags, *tags])
+                dict.fromkeys([*parent_tags, *tags])
             )
         else:
             tags = _normalize_tags(fields.get("System.Tags", []))
-            fields["System.Tags"] = list(dict.fromkeys(["AI-StoryWriting", *tags]))
+            fields["System.Tags"] = list(dict.fromkeys(tags))
+        fields["System.Tags"] = [
+            tag for tag in fields["System.Tags"]
+            if tag.casefold() != "ai-storywriting"
+        ]
         if isinstance(fields.get("System.Tags"), list):
             fields["System.Tags"] = "; ".join(fields["System.Tags"])
 

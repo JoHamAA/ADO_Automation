@@ -9,7 +9,7 @@ import pytest
 from eo_review.ado_client import AdoError
 from eo_review.config import Config, TeamConfig
 from tag_inheritance import cli
-from tag_inheritance.audit import audit_team, synchronize
+from tag_inheritance.audit import audit_team, remove_tag_from_stories, synchronize
 from tag_inheritance.client import PARENT_RELATION, TagInheritanceClient
 from tag_inheritance.console import render_audit
 from tag_inheritance.models import ImageTagMatch, TagWorkItem, TeamTagAudit, compare_tags
@@ -28,6 +28,7 @@ def make_item(
         tags,
         revision=7,
         parent_ids=parent_ids,
+        iteration_path="Project\\Sprint",
     )
 
 
@@ -53,6 +54,11 @@ class FakeAuditClient:
         self.parents = parents
         self.image_matches = image_matches or {}
         self.image_error = image_error
+        self.date_requests = []
+
+    def iteration_start_date(self, iteration_path):
+        self.date_requests.append(iteration_path)
+        return "2026-10-09T00:00:00Z"
 
     def current_iteration(self, team_name):
         return {"name": f"{team_name}_Sprint", "path": f"Project\\{team_name}"}
@@ -87,6 +93,7 @@ def test_client_parses_parent_relation_and_exact_tags():
                 "System.Title": "Story",
                 "System.WorkItemType": "User Story",
                 "System.Tags": "Cloud; cloud; Data Platform",
+                "System.IterationPath": "Project\\Sprint",
                 "Microsoft.VSTS.Common.Notes": '<img src="notes.png">',
             },
             "relations": [
@@ -101,6 +108,7 @@ def test_client_parses_parent_relation_and_exact_tags():
     assert item.tags == ("Cloud", "cloud", "Data Platform")
     assert item.parent_ids == (99,)
     assert item.notes == '<img src="notes.png">'
+    assert item.iteration_path == "Project\\Sprint"
 
 
 def test_client_fetches_all_discussion_pages(monkeypatch):
@@ -274,7 +282,7 @@ def test_audit_keeps_exclusions_visible_and_reports_invalid_parents():
         "UNRESOLVED",
         "UNRESOLVED",
     ]
-    assert report.results[0].tags_to_add == ("Run", "Parent Tag", "S-DFW")
+    assert report.results[0].tags_to_add == ("Run", "Parent Tag", "4Q26", "S-DFW")
     assert report.planned_updates == []
     rendered = render_audit(report)
     assert "Excluded: 1" in rendered
@@ -404,6 +412,89 @@ def test_synchronize_fails_verification_when_removed_tag_remains():
     assert outcomes[0].detail == "verification mismatch: missing [], unexpected [S-HYD]"
 
 
+def test_remove_tag_from_stories_removes_case_insensitive_tag_and_verifies():
+    story = make_item(1, ("Run", "Obsolete", "obsolete", "Keep"))
+    refreshed = replace(story, tags=("Run", "Keep"))
+    client = FakeSyncClient({1: refreshed})
+    outcomes = remove_tag_from_stories(client, [story], "OBSOLETE")
+    assert outcomes[0].succeeded
+    assert client.updates == [(1, 7, ("Run", "Keep"))]
+
+
+def test_remove_tag_from_stories_reports_failed_verification():
+    story = make_item(1, ("Run", "Obsolete"))
+    client = FakeSyncClient({1: replace(story, tags=("Run", "Obsolete"))})
+    outcomes = remove_tag_from_stories(client, [story], "Obsolete")
+    assert not outcomes[0].succeeded
+    assert "unexpected [Obsolete]" in outcomes[0].detail
+
+
+class FakeTagRemovalClient:
+    def __init__(self, stories):
+        self.stories = stories
+        self.updates = []
+
+    def current_iteration(self, team_name):
+        return {"name": "Sprint", "path": f"Project\\{team_name}\\Sprint"}
+
+    def story_ids_in_iteration(self, path):
+        return [story.id for story in self.stories]
+
+    def fetch_tag_work_items(self, ids):
+        return [story for story in self.stories if story.id in ids]
+
+    def update_story_tags(self, story_id, revision, tags):
+        self.updates.append((story_id, revision, tuple(tags)))
+        self.stories = [
+            replace(story, tags=tuple(tags)) if story.id == story_id else story
+            for story in self.stories
+        ]
+
+
+def test_remove_tag_cli_lists_only_matches_and_requires_yes(monkeypatch, capsys):
+    stories = [
+        replace(make_item(1, ("Keep",)), title="Unchanged story"),
+        replace(make_item(2, ("Target", "Keep")), title="Affected story"),
+        replace(make_item(3, ("target",)), title="Affected case variant"),
+    ]
+    client = FakeTagRemovalClient(stories)
+    monkeypatch.setattr(cli, "load_config", lambda path: make_config())
+    monkeypatch.setattr(cli, "TagInheritanceClient", lambda org, project: client)
+    monkeypatch.setattr("builtins.input", lambda prompt: "YES")
+
+    assert cli.main(["remove-tag", "DFW", "Target"]) == cli.EXIT_OK
+    output = capsys.readouterr().out
+    assert "remove Target from 2 | Affected story" in output
+    assert "remove Target from 3 | Affected case variant" in output
+    assert "Unchanged story" not in output
+    assert client.updates == [(2, 7, ("Keep",)), (3, 7, ())]
+
+
+def test_remove_tag_cli_cancellation_changes_nothing(monkeypatch, capsys):
+    client = FakeTagRemovalClient([make_item(2, ("Target",))])
+    monkeypatch.setattr(cli, "load_config", lambda path: make_config())
+    monkeypatch.setattr(cli, "TagInheritanceClient", lambda org, project: client)
+    monkeypatch.setattr("builtins.input", lambda prompt: "yes")
+
+    assert cli.main(["remove-tag", "DFW", "Target"]) == cli.EXIT_OK
+    assert client.updates == []
+    assert "CANCELLED" in capsys.readouterr().out
+
+
+def test_remove_tag_cli_skips_prompt_when_no_stories_match(monkeypatch, capsys):
+    client = FakeTagRemovalClient([make_item(1, ("Keep",))])
+    monkeypatch.setattr(cli, "load_config", lambda path: make_config())
+    monkeypatch.setattr(cli, "TagInheritanceClient", lambda org, project: client)
+
+    def unexpected_prompt(prompt):
+        raise AssertionError("approval should not be requested when there are no matches")
+
+    monkeypatch.setattr("builtins.input", unexpected_prompt)
+    assert cli.main(["remove-tag", "DFW", "Missing"]) == cli.EXIT_OK
+    assert client.updates == []
+    assert "No selected stories contain that tag" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     "groups,expected",
     [
@@ -432,7 +523,7 @@ def test_sync_requires_exact_yes_before_writing(monkeypatch, capsys):
     monkeypatch.setattr(
         cli,
         "audit_team",
-        lambda client, config, team, excluded, sprint_number=None: report,
+        lambda client, config, team, excluded, sprint_number=None, **kwargs: report,
     )
     monkeypatch.setattr(cli, "synchronize", lambda client, planned: synchronized.append(planned))
     monkeypatch.setattr("builtins.input", lambda prompt: "yes")
@@ -440,3 +531,100 @@ def test_sync_requires_exact_yes_before_writing(monkeypatch, capsys):
     assert cli.main(["sync", "DFW"]) == cli.EXIT_OK
     assert synchronized == []
     assert "CANCELLED" in capsys.readouterr().out
+
+
+def test_client_reads_start_date_from_exact_iteration_path(monkeypatch):
+    client = object.__new__(TagInheritanceClient)
+    client.org_url = "https://example.invalid"
+    client.project = "Project"
+    requested = []
+
+    def request(method, url):
+        requested.append((method, url))
+        return {"attributes": {
+            "startDate": "2026-09-28T00:00:00Z",
+            "finishDate": "2026-10-09T00:00:00Z",
+        }}
+
+    monkeypatch.setattr(client, "_request", request)
+    start = client.iteration_start_date("Project\\Team A\\Sprint 1")
+    assert start == "2026-09-28T00:00:00Z"
+    from tag_inheritance.quarter_tags import quarter_tag
+
+    assert quarter_tag(start) == "3Q26"
+    assert requested == [(
+        "GET",
+        "https://example.invalid/Project/_apis/wit/classificationnodes/"
+        "iterations/Team%20A/Sprint%201?api-version=7.1",
+    )]
+
+
+@pytest.mark.parametrize("attributes", [
+    {}, {"startDate": None}, {"finishDate": "2026-10-09T00:00:00Z"},
+])
+def test_client_reports_missing_iteration_start_date(monkeypatch, attributes):
+    client = object.__new__(TagInheritanceClient)
+    client.org_url = "https://example.invalid"
+    client.project = "Project"
+    monkeypatch.setattr(client, "_request", lambda *args: {"attributes": attributes})
+    with pytest.raises(AdoError, match="no start date"):
+        client.iteration_start_date("Project")
+
+
+def test_audit_caches_dates_and_replaces_wrong_quarters_after_image_scan():
+    stories = [
+        make_item(1, ("3Q26", "26Q4"), parent_ids=(101,)),
+        make_item(2, ("4Q26",), parent_ids=(101,)),
+    ]
+    client = FakeAuditClient(
+        stories, [make_item(101, ("Run", "2Q26"), "Feature")],
+        {1: (ImageTagMatch("Mutation", "mutation", "Notes"),)},
+    )
+    report = audit_team(client, make_config(), "dfw", set())
+    assert client.date_requests == ["Project\\Sprint"]
+    assert report.results[0].tags_to_remove == ("3Q26", "26Q4")
+    assert "4Q26" in report.results[0].proposed_tags
+    assert "Mutation" in report.results[0].proposed_tags
+    assert "2Q26" not in report.results[0].proposed_tags
+    assert report.results[1].proposed_tags.count("4Q26") == 1
+
+
+def test_audit_uses_each_story_iteration_including_descendants():
+    stories = [
+        make_item(1, parent_ids=(101,)),
+        replace(make_item(2, parent_ids=(101,)), iteration_path="Project\\Sprint\\Child"),
+    ]
+    client = FakeAuditClient(stories, [make_item(101, ("Run",), "Feature")])
+    client.iteration_start_date = lambda path: (
+        "2027-01-02T00:00:00Z" if path.endswith("Child") else "2026-12-31T00:00:00Z"
+    )
+    report = audit_team(client, make_config(), "dfw", set(), scan_images=False)
+    assert "4Q26" in report.results[0].proposed_tags
+    assert "1Q27" in report.results[1].proposed_tags
+
+
+@pytest.mark.parametrize("start", [None, "not-a-date", "2026-02-30T00:00:00Z"])
+def test_audit_leaves_tags_untouched_when_iteration_date_is_unresolved(start):
+    story = make_item(1, ("3Q26",), parent_ids=(101,))
+    client = FakeAuditClient([story], [make_item(101, ("Run",), "Feature")])
+
+    def date(path):
+        if start is None:
+            raise AdoError("Iteration has no start date")
+        return start
+
+    client.iteration_start_date = date
+    report = audit_team(client, make_config(), "dfw", set())
+    assert report.results[0].status == "UNRESOLVED"
+    assert report.results[0].proposed_tags == ("3Q26",)
+    assert report.planned_updates == []
+
+
+def test_sync_detects_incorrect_quarter_remaining_after_write():
+    story = make_item(1, ("Run", "S-DFW", "3Q26"))
+    parent = make_item(101, ("Run", "2Q26"), "Feature")
+    audit = compare_tags(story, parent, "S-DFW", expected_quarter_tag="4Q26")
+    client = FakeSyncClient({1: replace(story, tags=(*audit.proposed_tags, "3Q26"))})
+    outcomes = synchronize(client, [audit])
+    assert not outcomes[0].succeeded
+    assert "unexpected [3Q26]" in outcomes[0].detail

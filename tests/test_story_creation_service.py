@@ -103,6 +103,35 @@ def make_service(tmp_path):
     return StoryService(client, config_path), client
 
 
+def test_new_story_does_not_inherit_feature_quarter_tags(tmp_path):
+    service, client = make_service(tmp_path)
+    client.items[10] = {
+        "id": 10,
+        "fields": {
+            "System.WorkItemType": "Feature",
+            "System.TeamProject": "DataEngineering",
+            "System.AreaPath": "DataEngineering\\Analytics",
+            "System.Tags": "3Q26; 26Q4; Q3 2026; Run; MongoPNR; AI-StoryWriting",
+        },
+    }
+    result = service.create_story({
+        "backlog": "deaa", "title": "Collection readiness", "parent_id": 10,
+    })
+    assert result["status"] == "created_verified"
+    assert client.created[0][2]["System.Tags"] == "Run; MongoPNR"
+
+
+def test_create_filters_retired_tag_from_explicit_tags(tmp_path):
+    service, client = make_service(tmp_path)
+    result = service.create_story({
+        "backlog": "deaa",
+        "title": "Validate collection readiness",
+        "tags": "Run; ai-storywriting; MongoPNR; Run",
+    })
+    assert result["status"] == "created_verified"
+    assert client.created[0][2]["System.Tags"] == "Run; MongoPNR"
+
+
 def test_create_omits_unused_content_fields_and_applies_configured_defaults(tmp_path):
     service, client = make_service(tmp_path)
 
@@ -119,7 +148,7 @@ def test_create_omits_unused_content_fields_and_applies_configured_defaults(tmp_
     assert fields["Microsoft.VSTS.Common.Priority"] == 2
     assert fields["AAIT.Ready"] == "Yes"
     assert fields["AAIT.WorkType"] == "4. Software / UX"
-    assert fields["System.Tags"] == "AI-StoryWriting"
+    assert fields["System.Tags"] == ""
     assert fields["Microsoft.VSTS.Common.StackRank"] == 1000
     assert "System.Description" not in fields
     assert "Microsoft.VSTS.Common.AcceptanceCriteria" not in fields

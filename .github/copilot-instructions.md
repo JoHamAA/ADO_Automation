@@ -24,7 +24,7 @@ Configurations default to `.github/config.yaml` values:
 - **Priority**: `2`
 - **Ready**: `Yes`
 - **Work Type**: `4. Software / UX`
-- **Tags**: Must include `AI-StoryWriting` and inherit all parent Feature tags.
+- **Tags**: Inherit applicable parent Feature tags, excluding quarter/year tags. Derive a story's quarter/year tag from its assigned iteration's start date; do not assign one for an undated backlog iteration.
 
 ### Iteration Assignment Rule
 - Do **not** assign a story to a specific team sprint (e.g. `PaxHub_DFW\DFW_Sprint_35_2026`) unless the user's request explicitly states an iteration/sprint.

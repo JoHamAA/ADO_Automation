@@ -39,6 +39,21 @@ def _parent_ids(relations: Sequence[Dict[str, Any]]) -> Tuple[int, ...]:
 class TagInheritanceClient(AdoClient):
     """REST client with explicit tag read and write operations."""
 
+    def iteration_start_date(self, iteration_path: str) -> str:
+        parts = iteration_path.split("\\")
+        if not parts or parts[0].casefold() != self.project.casefold():
+            raise AdoError(f"Invalid iteration path: '{iteration_path}'.")
+        encoded_path = "/".join(quote(part, safe="") for part in parts[1:])
+        url = (
+            f"{self.org_url}/{quote(self.project, safe='')}/_apis/wit/"
+            f"classificationnodes/iterations/{encoded_path}?api-version={API_VERSION}"
+        )
+        payload = self._request("GET", url)
+        start = (payload.get("attributes") or {}).get("startDate")
+        if not isinstance(start, str) or not start:
+            raise AdoError(f"Iteration '{iteration_path}' has no start date.")
+        return start
+
     def iteration_by_number(
         self,
         team_name: str,
@@ -131,6 +146,7 @@ class TagInheritanceClient(AdoClient):
             revision=int(item.get("rev", 0)),
             parent_ids=_parent_ids(item.get("relations") or []),
             notes=str(fields.get("Microsoft.VSTS.Common.Notes") or ""),
+            iteration_path=str(fields.get("System.IterationPath") or ""),
         )
 
     def fetch_discussion_comments(self, story_id: int) -> List[Tuple[str, str]]:
